@@ -1,0 +1,26 @@
+[Unit]
+Description=Panel Label Renderer HTTP Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=labelrender
+Group=labelrender
+WorkingDirectory=/opt/panel2
+EnvironmentFile=-/etc/default/labelrenderd
+Environment="LABELRENDERD_ADDR=127.0.0.1:8787"
+Environment="LABELRENDERD_TEMPLATES=/opt/panel2/templates"
+Environment="HOME=/var/lib/labelrenderd"
+ExecStart=/usr/local/bin/labelrenderd -addr ${LABELRENDERD_ADDR} -templates ${LABELRENDERD_TEMPLATES}
+Restart=on-failure
+RestartSec=2s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+StateDirectory=labelrenderd
+ReadWritePaths=/tmp
+
+[Install]
+WantedBy=multi-user.target

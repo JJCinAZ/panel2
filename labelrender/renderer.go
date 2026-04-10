@@ -179,6 +179,33 @@ func RenderFileTo1BitPNG(inputHTMLPath string, outputPNGPath string, opts Option
 	return nil
 }
 
+// RenderFileTo1BitPNGBytes renders a local HTML file and returns the final 1-bit PNG bytes.
+func RenderFileTo1BitPNGBytes(inputHTMLPath string, opts Options) ([]byte, error) {
+	var err error
+	var outputFile *os.File
+	var outputPath string
+	var pngBytes []byte
+
+	if outputFile, err = os.CreateTemp("", "labelrender-output-*.png"); err != nil {
+		return nil, fmt.Errorf("create temp output file: %w", err)
+	}
+	outputPath = outputFile.Name()
+	if err = outputFile.Close(); err != nil {
+		return nil, fmt.Errorf("close temp output file: %w", err)
+	}
+	defer func() {
+		_ = os.Remove(outputPath)
+	}()
+
+	if err = RenderFileTo1BitPNG(inputHTMLPath, outputPath, opts); err != nil {
+		return nil, err
+	}
+	if pngBytes, err = os.ReadFile(outputPath); err != nil {
+		return nil, fmt.Errorf("read output png: %w", err)
+	}
+	return pngBytes, nil
+}
+
 func renderInputHTML(inputAbsPath string, rawHTML []byte, templateData any) (string, error) {
 	var ext string
 
@@ -211,6 +238,10 @@ func captureWithBrowser(htmlPath string, screenshotPath string, opts Options) er
 	var fileURL string
 	var args []string
 	var chromePath string
+	var chromeUserDataDir string
+	var chromeHomeDir string
+	var chromeXDGConfigHome string
+	var chromeXDGCacheHome string
 	var firefoxPath string
 	var captureHeight int
 	var captureExtraHeight int
@@ -218,6 +249,7 @@ func captureWithBrowser(htmlPath string, screenshotPath string, opts Options) er
 	var cancel context.CancelFunc
 	var cmd *exec.Cmd
 	var output []byte
+	var env []string
 
 	ctx, cancel = context.WithTimeout(context.Background(), opts.ChromeTimeout)
 	defer cancel()
@@ -252,6 +284,19 @@ func captureWithBrowser(htmlPath string, screenshotPath string, opts Options) er
 	if chromePath, err = resolveChromeBinary(opts.ChromePath); err != nil {
 		return err
 	}
+	chromeUserDataDir = filepath.Join(filepath.Dir(screenshotPath), "chrome-user-data")
+	chromeHomeDir = filepath.Join(filepath.Dir(screenshotPath), "chrome-home")
+	chromeXDGConfigHome = filepath.Join(chromeHomeDir, ".config")
+	chromeXDGCacheHome = filepath.Join(chromeHomeDir, ".cache")
+	if err = os.MkdirAll(chromeUserDataDir, 0o755); err != nil {
+		return fmt.Errorf("create chrome user data dir: %w", err)
+	}
+	if err = os.MkdirAll(chromeXDGConfigHome, 0o755); err != nil {
+		return fmt.Errorf("create chrome xdg config dir: %w", err)
+	}
+	if err = os.MkdirAll(chromeXDGCacheHome, 0o755); err != nil {
+		return fmt.Errorf("create chrome xdg cache dir: %w", err)
+	}
 	args = []string{
 		"--headless=new",
 		"--disable-gpu",
@@ -260,6 +305,10 @@ func captureWithBrowser(htmlPath string, screenshotPath string, opts Options) er
 		"--no-first-run",
 		"--no-default-browser-check",
 		"--disable-crash-reporter",
+		"--disable-breakpad",
+		"--disable-crashpad",
+		"--disable-features=Crashpad",
+		fmt.Sprintf("--user-data-dir=%s", chromeUserDataDir),
 		fmt.Sprintf("--window-size=%d,%d", opts.Width, captureHeight),
 		"--force-device-scale-factor=1",
 		fmt.Sprintf("--virtual-time-budget=%d", opts.VirtualTimeBudget.Milliseconds()),
@@ -267,6 +316,11 @@ func captureWithBrowser(htmlPath string, screenshotPath string, opts Options) er
 		fileURL,
 	}
 	cmd = exec.CommandContext(ctx, chromePath, args...)
+	env = os.Environ()
+	env = append(env, fmt.Sprintf("HOME=%s", chromeHomeDir))
+	env = append(env, fmt.Sprintf("XDG_CONFIG_HOME=%s", chromeXDGConfigHome))
+	env = append(env, fmt.Sprintf("XDG_CACHE_HOME=%s", chromeXDGCacheHome))
+	cmd.Env = env
 	if output, err = cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("headless chrome failed: %w: %s", err, strings.TrimSpace(string(output)))
 	}

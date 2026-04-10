@@ -17,6 +17,119 @@ go run ./cmd/labelrender \
   -output architecturalLabel-1bit.png
 ```
 
+## Run HTTP render server
+
+Start an HTTP-only server bound to localhost on a non-standard port:
+
+```bash
+go run ./cmd/labelrenderd \
+  -addr 127.0.0.1:8787 \
+  -templates .
+```
+
+Then call `POST /render` with JSON that names a template plus optional renderer settings and template data.
+
+Request example:
+
+```bash
+curl -sS \
+  -X POST http://127.0.0.1:8787/render \
+  -H 'Content-Type: application/json' \
+  -o output.png \
+  -d '{
+    "template": "architecturalLabel.html",
+    "options": {
+      "engine": "chrome",
+      "width": 800,
+      "height": 480,
+      "threshold": 150,
+      "wait_ms": 5000
+    },
+    "data": {
+      "SuiteNumber": "126",
+      "TenantName": "BJM SABINO, LLC",
+      "TenantSubtitle": "\"A few small beers\""
+    }
+  }'
+```
+
+Success returns `image/png` bytes. Errors return JSON:
+
+```json
+{"error":"..."}
+```
+
+## Deploy as a systemd service (Linux)
+
+Example files are included:
+
+- `deploy/systemd/labelrenderd.service.example`
+- `deploy/systemd/labelrenderd.env.example`
+
+This example installs to `/opt/panel2`, binds to `127.0.0.1:8787`, and serves templates from `/opt/panel2/templates`.
+
+1. Install browser dependency (example with Chromium on Debian/Ubuntu):
+
+```bash
+sudo apt update
+sudo apt install -y chromium
+```
+
+2. Build and install the server binary:
+
+```bash
+cd /path/to/panel2
+go build -o /tmp/labelrenderd ./cmd/labelrenderd
+sudo install -d -m 0755 /opt/panel2/templates
+sudo install -m 0755 /tmp/labelrenderd /usr/local/bin/labelrenderd
+```
+
+3. Install templates:
+
+```bash
+sudo install -m 0644 architecturalLabel.html /opt/panel2/templates/architecturalLabel.html
+```
+
+4. Create a dedicated service account:
+
+```bash
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin labelrender || true
+sudo chown -R labelrender:labelrender /opt/panel2
+sudo install -d -m 0755 -o labelrender -g labelrender /var/lib/labelrenderd
+```
+
+5. Install environment and unit files:
+
+```bash
+sudo install -m 0644 deploy/systemd/labelrenderd.env.example /etc/default/labelrenderd
+sudo install -m 0644 deploy/systemd/labelrenderd.service.example /etc/systemd/system/labelrenderd.service
+```
+
+6. Enable and start service:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now labelrenderd
+```
+
+7. Verify health and call the render route:
+
+```bash
+sudo systemctl status labelrenderd --no-pager
+journalctl -u labelrenderd -n 100 --no-pager
+curl -sS -X POST http://127.0.0.1:8787/render \
+  -H 'Content-Type: application/json' \
+  -o /tmp/output.png \
+  -d '{"template":"architecturalLabel.html","data":{"SuiteNumber":"126","TenantName":"BJM SABINO, LLC"}}'
+file /tmp/output.png
+```
+
+If needed, edit `/etc/default/labelrenderd` to change bind address or template directory, then restart:
+
+```bash
+sudo systemctl restart labelrenderd
+```
+
 Optional flags:
 
 - `-engine chrome|firefox` selects the rendering browser (default `chrome`).
