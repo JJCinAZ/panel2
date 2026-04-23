@@ -85,7 +85,7 @@ func RenderFileTo1BitPNG(inputHTMLPath string, outputPNGPath string, opts Option
 	var screenshotFile *os.File
 	var screenshotImage image.Image
 	var normalizedImage image.Image
-	var oneBitImage *image.Paletted
+	var oneBitImage *image.Gray
 	var outputFile *os.File
 
 	if inputAbsPath, err = filepath.Abs(inputHTMLPath); err != nil {
@@ -525,7 +525,7 @@ func normalizeImageSize(src image.Image, width int, height int) (image.Image, er
 	return target, nil
 }
 
-func convertTo1Bit(src image.Image, opts Options) *image.Paletted {
+func convertTo1Bit(src image.Image, opts Options) *image.Gray {
 	var gray *image.Gray
 
 	gray = prepareGrayImage(src, opts.Gamma, opts.Contrast)
@@ -577,27 +577,22 @@ func prepareGrayImage(src image.Image, gamma float64, contrast float64) *image.G
 	return out
 }
 
-func thresholdBinarize(src *image.Gray, threshold uint8) *image.Paletted {
+func thresholdBinarize(src *image.Gray, threshold uint8) *image.Gray {
 	var bounds image.Rectangle
-	var palette color.Palette
-	var dst *image.Paletted
+	var dst *image.Gray
 	var y int
 	var x int
 
 	bounds = src.Bounds()
-	palette = color.Palette{
-		color.White,
-		color.Black,
-	}
-	dst = image.NewPaletted(bounds, palette)
+	dst = image.NewGray(bounds)
 
 	for y = bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x = bounds.Min.X; x < bounds.Max.X; x++ {
 			if src.GrayAt(x, y).Y < threshold {
-				dst.SetColorIndex(x, y, 1)
+				dst.SetGray(x, y, color.Gray{Y: 0})
 				continue
 			}
-			dst.SetColorIndex(x, y, 0)
+			dst.SetGray(x, y, color.Gray{Y: 255})
 		}
 	}
 	return dst
